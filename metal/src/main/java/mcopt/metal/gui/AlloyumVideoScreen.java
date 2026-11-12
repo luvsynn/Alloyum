@@ -4,12 +4,16 @@ import com.mojang.logging.LogUtils;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
+import mcopt.metal.fx.ColorGrading;
 import mcopt.metal.Profile;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.options.VideoSettingsScreen;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 
@@ -64,8 +68,7 @@ public final class AlloyumVideoScreen extends Screen {
 
 		switch (this.page) {
 			case ALLOYUM -> this.addAlloyumOptions(contentX, contentWidth, y + 40);
-			case SHADERS -> this.addRenderableWidget(new StringWidget(contentX, y + 40, contentWidth, 20,
-				Component.literal("Shader effects are coming soon"), this.font));
+			case SHADERS -> this.addShaderOptions(contentX, contentWidth, y + 40);
 			case VANILLA -> this.addRenderableWidget(Button.builder(Component.literal("Open vanilla video settings"), button -> this.openVanilla())
 				.bounds(contentX, y + 40, contentWidth, 20).build());
 		}
@@ -79,6 +82,23 @@ public final class AlloyumVideoScreen extends Screen {
 			.bounds(x, y, width, 20).build());
 		this.addRenderableWidget(Button.builder(this.farTerrainLabel(), button -> this.toggleFarTerrain())
 			.bounds(x, y + 30, width, 20).build());
+	}
+
+	private void addShaderOptions(int x, int width, int y) {
+		this.addRenderableWidget(Button.builder(Component.literal("Color grading: " + (ColorGrading.enabled() ? "On" : "Off")),
+			button -> this.toggleColorGrading()).bounds(x, y, width, 20).build());
+		this.addRenderableWidget(new StrengthSlider(x, y + 30, width));
+	}
+
+	private void toggleColorGrading() {
+		try {
+			ColorGrading.setEnabled(!ColorGrading.enabled(), this.minecraft.getShaderManager());
+			this.status = "";
+		} catch (IOException | RuntimeException e) {
+			LOGGER.error("Could not save Alloyum settings to config/mcopt.properties", e);
+			this.status = "Could not save settings; see log";
+		}
+		this.rebuildWidgets();
 	}
 
 	private Component profileLabel() {
@@ -136,6 +156,46 @@ public final class AlloyumVideoScreen extends Screen {
 	@Override
 	public void onClose() {
 		this.minecraft.setScreenAndShow(this.parent);
+	}
+
+	private final class StrengthSlider extends AbstractSliderButton {
+		private StrengthSlider(int x, int y, int width) {
+			super(x, y, width, 20, Component.empty(), ColorGrading.strength() / 100.0);
+			this.updateMessage();
+		}
+
+		@Override
+		protected void updateMessage() {
+			this.setMessage(Component.literal("Strength: " + Math.round(this.value * 100) + "%"));
+		}
+
+		@Override
+		protected void applyValue() {
+			ColorGrading.setStrengthLive((int) Math.round(this.value * 100));
+		}
+
+		@Override
+		public void onRelease(MouseButtonEvent event) {
+			super.onRelease(event);
+			this.saveStrength();
+		}
+
+		@Override
+		public boolean keyPressed(KeyEvent event) {
+			boolean changed = super.keyPressed(event);
+			if (changed) this.saveStrength();
+			return changed;
+		}
+
+		private void saveStrength() {
+			try {
+				ColorGrading.saveStrength();
+				AlloyumVideoScreen.this.status = "";
+			} catch (IOException | RuntimeException e) {
+				LOGGER.error("Could not save Alloyum color-grading strength", e);
+				AlloyumVideoScreen.this.status = "Could not save settings; see log";
+			}
+		}
 	}
 
 	private enum Page {

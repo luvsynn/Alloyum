@@ -54,11 +54,21 @@ public final class Profile {
 		return Boolean.parseBoolean(profileSettings.getProperty("mcopt.lod", "false").trim());
 	}
 
+	public static String configuredSetting(String key, String fallback) throws IOException {
+		if (!isSupportedSetting(key)) throw new IllegalArgumentException("Unsupported setting: " + key);
+		return readSettings().getProperty(key, fallback).trim();
+	}
+
 	public static void saveSetting(String key, String value) throws IOException {
 		if (key.equals("profile")) {
 			if (!java.util.List.of("indie", "alpha", "recommended", "none").contains(value)) throw new IllegalArgumentException("Unknown profile: " + value);
 		} else if (key.equals("mcopt.lod")) {
 			if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Invalid far-terrain setting: " + value);
+		} else if (key.equals("alloyum.fx.grade")) {
+			if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Invalid color-grading setting: " + value);
+		} else if (key.equals("alloyum.fx.grade.strength")) {
+			int strength = Integer.parseInt(value);
+			if (strength < 0 || strength > 100) throw new IllegalArgumentException("Color-grading strength must be from 0 to 100");
 		} else {
 			throw new IllegalArgumentException("Unsupported setting: " + key);
 		}
@@ -85,6 +95,10 @@ public final class Profile {
 		}
 		Files.createDirectories(cfg.getParent());
 		Files.writeString(cfg, updated, StandardCharsets.UTF_8);
+	}
+
+	private static boolean isSupportedSetting(String key) {
+		return key.equals("profile") || key.equals("mcopt.lod") || key.equals("alloyum.fx.grade") || key.equals("alloyum.fx.grade.strength");
 	}
 
 	private static Properties readSettings() throws IOException {
@@ -241,6 +255,8 @@ public final class Profile {
 			#mcopt.own=false
 			# Far terrain (EXPERIMENTAL, off by default; for Macs with 10 or more GPU cores): remove the # below.
 			#mcopt.lod=true
+			alloyum.fx.grade=false
+			alloyum.fx.grade.strength=50
 			""".formatted(name);
 		try {
 			Files.createDirectories(cfg.getParent());

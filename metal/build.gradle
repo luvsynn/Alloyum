@@ -2,7 +2,11 @@ plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
-version = '0.3.0-alpha.3'
+loom {
+	accessWidenerPath = file('src/main/resources/mcopt-metal.accesswidener')
+}
+
+version = '0.3.0-alpha.6'
 
 base {
 	archivesName = 'alloyum'
