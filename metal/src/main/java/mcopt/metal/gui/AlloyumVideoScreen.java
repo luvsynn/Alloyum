@@ -87,7 +87,9 @@ public final class AlloyumVideoScreen extends Screen {
 	private void addShaderOptions(int x, int width, int y) {
 		this.addRenderableWidget(Button.builder(Component.literal("Color grading: " + (ColorGrading.enabled() ? "On" : "Off")),
 			button -> this.toggleColorGrading()).bounds(x, y, width, 20).build());
-		this.addRenderableWidget(new StrengthSlider(x, y + 30, width));
+		this.addRenderableWidget(new ControlSlider(x, y + 30, width, ColorGrading.Control.SATURATION));
+		this.addRenderableWidget(new ControlSlider(x, y + 56, width, ColorGrading.Control.CONTRAST));
+		this.addRenderableWidget(new ControlSlider(x, y + 82, width, ColorGrading.Control.WARMTH));
 	}
 
 	private void toggleColorGrading() {
@@ -158,41 +160,44 @@ public final class AlloyumVideoScreen extends Screen {
 		this.minecraft.setScreenAndShow(this.parent);
 	}
 
-	private final class StrengthSlider extends AbstractSliderButton {
-		private StrengthSlider(int x, int y, int width) {
-			super(x, y, width, 20, Component.empty(), ColorGrading.strength() / 100.0);
+	private final class ControlSlider extends AbstractSliderButton {
+		private final ColorGrading.Control control;
+
+		private ControlSlider(int x, int y, int width, ColorGrading.Control control) {
+			super(x, y, width, 20, Component.empty(), ColorGrading.value(control) / 100.0);
+			this.control = control;
 			this.updateMessage();
 		}
 
 		@Override
 		protected void updateMessage() {
-			this.setMessage(Component.literal("Strength: " + Math.round(this.value * 100) + "%"));
+			this.setMessage(Component.literal(this.control.label() + ": " + Math.round(this.value * 100) + "%"));
 		}
 
 		@Override
 		protected void applyValue() {
-			ColorGrading.setStrengthLive((int) Math.round(this.value * 100));
+			ColorGrading.setLive(this.control, (int) Math.round(this.value * 100), AlloyumVideoScreen.this.minecraft.getShaderManager());
 		}
 
 		@Override
 		public void onRelease(MouseButtonEvent event) {
 			super.onRelease(event);
-			this.saveStrength();
+			this.saveValue();
 		}
 
 		@Override
 		public boolean keyPressed(KeyEvent event) {
 			boolean changed = super.keyPressed(event);
-			if (changed) this.saveStrength();
+			if (changed) this.saveValue();
 			return changed;
 		}
 
-		private void saveStrength() {
+		private void saveValue() {
 			try {
-				ColorGrading.saveStrength();
+				ColorGrading.save(this.control);
 				AlloyumVideoScreen.this.status = "";
 			} catch (IOException | RuntimeException e) {
-				LOGGER.error("Could not save Alloyum color-grading strength", e);
+				LOGGER.error("Could not save Alloyum color-grading settings", e);
 				AlloyumVideoScreen.this.status = "Could not save settings; see log";
 			}
 		}

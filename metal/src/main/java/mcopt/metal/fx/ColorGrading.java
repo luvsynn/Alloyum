@@ -1,13 +1,19 @@
 package mcopt.metal.fx;
 
-import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.buffers.Std140Builder;
+import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
+import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.pipeline.TextureTarget;
+import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
+import com.mojang.blaze3d.resource.ResourceHandle;
 import com.mojang.logging.LogUtils;
+import com.mojang.renderpearl.api.GpuFormat;
 import com.mojang.renderpearl.api.buffers.GpuBuffer;
 import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -23,57 +29,86 @@ import org.slf4j.Logger;
 
 public final class ColorGrading {
 	public static final String ENABLED_KEY = "alloyum.fx.grade";
-	public static final String STRENGTH_KEY = "alloyum.fx.grade.strength";
 	public static final Identifier CHAIN_ID = Identifier.fromNamespaceAndPath("alloyum", "color_grading");
+	private static final Identifier OUTPUT_TARGET_ID = Identifier.fromNamespaceAndPath("alloyum", "grade_output");
+	private static final Set<Identifier> ALLOWED_TARGETS = allowedTargets();
 	private static final Logger LOGGER = LogUtils.getLogger();
 	private static final Set<GpuBuffer> UNIFORMS = Collections.newSetFromMap(new IdentityHashMap<>());
 	private static boolean enabled;
-	private static int strength = 50;
+	private static int saturation = 20;
+	private static int contrast = 20;
+	private static int warmth = 10;
 	private static boolean created;
-	private static ShaderManager lastShaderManager;
+	private static TextureTarget outputTarget;
 
 	static {
-		try {
-			String enabledValue = Profile.configuredSetting(ENABLED_KEY, "false");
-			if (!enabledValue.equals("true") && !enabledValue.equals("false")) throw new IllegalArgumentException("Expected true or false");
-			enabled = Boolean.parseBoolean(enabledValue);
-			strength = parseStrength(Profile.configuredSetting(STRENGTH_KEY, "50"));
-		} catch (IOException | RuntimeException e) {
-			LOGGER.error("Could not read Alloyum color-grading settings; using defaults", e);
-			enabled = false;
-			strength = 50;
-		}
+		enabled = readEnabled();
+		saturation = readPercent(Control.SATURATION, saturation);
+		contrast = readPercent(Control.CONTRAST, contrast);
+		warmth = readPercent(Control.WARMTH, warmth);
 	}
 
 	private ColorGrading() {
+	}
+
+	public enum Control {
+		SATURATION("Saturation", "alloyum.fx.grade.saturation"),
+		CONTRAST("Contrast", "alloyum.fx.grade.contrast"),
+		WARMTH("Warmth", "alloyum.fx.grade.warmth");
+
+		private final String label;
+		private final String key;
+
+		Control(String label, String key) {
+			this.label = label;
+			this.key = key;
+		}
+
+		public String label() {
+			return this.label;
+		}
 	}
 
 	public static boolean enabled() {
 		return enabled;
 	}
 
-	public static int strength() {
-		return strength;
+	public static int value(Control control) {
+		return switch (control) {
+			case SATURATION -> saturation;
+			case CONTRAST -> contrast;
+			case WARMTH -> warmth;
+		};
 	}
 
 	public static void setEnabled(boolean value, ShaderManager shaderManager) throws IOException {
 		if (enabled == value) return;
 		Profile.saveSetting(ENABLED_KEY, Boolean.toString(value));
 		enabled = value;
-		if (!value) remove(shaderManager);
+		if (!value) releaseResources(shaderManager);
 	}
 
-	public static void setStrengthLive(int value) {
-		strength = Math.max(0, Math.min(100, value));
+	public static void setLive(Control control, int value, ShaderManager shaderManager) {
+		int bounded = Math.max(0, Math.min(100, value));
+		switch (control) {
+			case SATURATION -> saturation = bounded;
+			case CONTRAST -> contrast = bounded;
+			case WARMTH -> warmth = bounded;
+		}
+		if (!enabled) return;
+		if (isNeutral()) {
+			releaseResources(shaderManager);
+			return;
+		}
 		try {
 			updateUniforms();
 		} catch (RuntimeException e) {
-			disableAfterFailure(lastShaderManager, e);
+			disableAfterFailure(shaderManager, e);
 		}
 	}
 
-	public static void saveStrength() throws IOException {
-		Profile.saveSetting(STRENGTH_KEY, Integer.toString(strength));
+	public static void save(Control control) throws IOException {
+		Profile.saveSetting(control.key, Integer.toString(value(control)));
 	}
 
 	public static void registerUniform(GpuBuffer buffer) {
@@ -85,29 +120,89 @@ public final class ColorGrading {
 		UNIFORMS.remove(buffer);
 	}
 
-	public static void apply(ShaderManager shaderManager, RenderTarget target, GraphicsResourceAllocator allocator) {
-		if (!enabled) return;
-		lastShaderManager = shaderManager;
+	public static RenderTarget apply(ShaderManager shaderManager, RenderTarget source, GraphicsResourceAllocator allocator) {
+		if (!enabled || isNeutral()) return null;
 		try {
-			if (!shaderManager.isPostEffectValid(CHAIN_ID, LevelTargetBundle.MAIN_TARGETS)) {
+			if (!shaderManager.isPostEffectValid(CHAIN_ID, ALLOWED_TARGETS)) {
 				throw new IllegalStateException("Minecraft rejected the Alloyum color-grading post chain");
 			}
-			PostChain chain = shaderManager.getPostChain(CHAIN_ID, LevelTargetBundle.MAIN_TARGETS);
+			PostChain chain = shaderManager.getPostChain(CHAIN_ID, ALLOWED_TARGETS);
 			if (chain == null) throw new IllegalStateException("Minecraft could not load the Alloyum color-grading post chain");
-			chain.process(target, allocator);
+			ensureOutputTarget(source.width, source.height);
+			FrameGraphBuilder frame = new FrameGraphBuilder();
+			Map<Identifier, ResourceHandle<RenderTarget>> targets = new HashMap<>();
+			targets.put(PostChain.MAIN_TARGET_ID, frame.importExternal("Alloyum grading source", source));
+			targets.put(OUTPUT_TARGET_ID, frame.importExternal("Alloyum grading output", outputTarget));
+			chain.addToFrame(frame, source.width, source.height, targetBundle(targets));
+			frame.execute(allocator);
 			if (!created) {
 				created = true;
 				LOGGER.info("Alloyum: color grading effect created");
 			}
+			return outputTarget;
 		} catch (RuntimeException e) {
 			disableAfterFailure(shaderManager, e);
+			return null;
 		}
 	}
 
-	private static int parseStrength(String value) {
-		int result = Integer.parseInt(value);
-		if (result < 0 || result > 100) throw new IllegalArgumentException("Color-grading strength must be from 0 to 100");
-		return result;
+	public static void close(ShaderManager shaderManager) {
+		releaseResources(shaderManager);
+	}
+
+	private static boolean readEnabled() {
+		try {
+			String value = Profile.configuredSetting(ENABLED_KEY, "false");
+			if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Expected true or false");
+			return Boolean.parseBoolean(value);
+		} catch (IOException | IllegalArgumentException e) {
+			LOGGER.error("Could not read Alloyum color-grading toggle; using off", e);
+			return false;
+		}
+	}
+
+	private static int readPercent(Control control, int fallback) {
+		try {
+			int value = Integer.parseInt(Profile.configuredSetting(control.key, Integer.toString(fallback)));
+			if (value < 0 || value > 100) throw new IllegalArgumentException("Value must be from 0 to 100");
+			return value;
+		} catch (IOException | IllegalArgumentException e) {
+			LOGGER.error("Could not read {}; using {}%", control.key, fallback, e);
+			return fallback;
+		}
+	}
+
+	private static Set<Identifier> allowedTargets() {
+		Set<Identifier> targets = new HashSet<>(LevelTargetBundle.MAIN_TARGETS);
+		targets.add(OUTPUT_TARGET_ID);
+		return Set.copyOf(targets);
+	}
+
+	private static PostChain.TargetBundle targetBundle(Map<Identifier, ResourceHandle<RenderTarget>> targets) {
+		return new PostChain.TargetBundle() {
+			@Override
+			public void replace(Identifier id, ResourceHandle<RenderTarget> handle) {
+				if (!targets.containsKey(id)) throw new IllegalArgumentException("Unexpected post-chain target " + id);
+				targets.put(id, handle);
+			}
+
+			@Override
+			public ResourceHandle<RenderTarget> get(Identifier id) {
+				return targets.get(id);
+			}
+		};
+	}
+
+	private static boolean isNeutral() {
+		return saturation == 0 && contrast == 0 && warmth == 0;
+	}
+
+	private static void ensureOutputTarget(int width, int height) {
+		if (outputTarget == null) {
+			outputTarget = new TextureTarget("Alloyum color grading", width, height, GpuFormat.RGBA8_UNORM, GpuFormat.D32_FLOAT);
+		} else if (outputTarget.width != width || outputTarget.height != height) {
+			outputTarget.resize(width, height);
+		}
 	}
 
 	private static void updateUniforms() {
@@ -116,7 +211,10 @@ public final class ColorGrading {
 
 	private static void writeUniform(GpuBuffer buffer) {
 		try (GpuBufferSlice.MappedView mapped = buffer.map(false, true)) {
-			Std140Builder.intoBuffer(mapped.data()).putFloat(strength / 100.0F);
+			Std140Builder builder = Std140Builder.intoBuffer(mapped.data());
+			builder.putFloat(saturation / 100.0F);
+			builder.putFloat(contrast / 100.0F);
+			builder.putFloat(warmth / 100.0F);
 		}
 	}
 
@@ -129,17 +227,30 @@ public final class ColorGrading {
 		} catch (IOException | RuntimeException saveError) {
 			LOGGER.error("Could not save the disabled color-grading setting", saveError);
 		}
-		remove(shaderManager);
+		releaseResources(shaderManager);
 	}
 
-	private static void remove(ShaderManager shaderManager) {
-		if (shaderManager != null) {
-			ShaderManager.PostChainCache cache = ((ShaderManagerPostChainAccessor) (Object) shaderManager).alloyum$postChainCache();
-			if (cache != null) {
-				Map<Identifier, Optional<PostChain>> chains = ((PostChainCacheAccessor) cache).alloyum$postChains();
-				Optional<PostChain> chain = chains.remove(CHAIN_ID);
-				if (chain != null) chain.ifPresent(PostChain::close);
+	private static void releaseResources(ShaderManager shaderManager) {
+		try {
+			if (shaderManager != null) {
+				ShaderManager.PostChainCache cache = ((ShaderManagerPostChainAccessor) (Object) shaderManager).alloyum$postChainCache();
+				if (cache != null) {
+					Map<Identifier, Optional<PostChain>> chains = ((PostChainCacheAccessor) cache).alloyum$postChains();
+					Optional<PostChain> chain = chains.remove(CHAIN_ID);
+					if (chain != null) chain.ifPresent(PostChain::close);
+				}
 			}
+		} catch (RuntimeException e) {
+			LOGGER.error("Could not release the Alloyum color-grading post chain", e);
+		}
+		UNIFORMS.clear();
+		if (outputTarget != null) {
+			try {
+				outputTarget.destroyBuffers();
+			} catch (RuntimeException e) {
+				LOGGER.error("Could not release the Alloyum color-grading target", e);
+			}
+			outputTarget = null;
 		}
 		if (created) {
 			created = false;

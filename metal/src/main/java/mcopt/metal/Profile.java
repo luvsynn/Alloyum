@@ -69,6 +69,9 @@ public final class Profile {
 		} else if (key.equals("alloyum.fx.grade.strength")) {
 			int strength = Integer.parseInt(value);
 			if (strength < 0 || strength > 100) throw new IllegalArgumentException("Color-grading strength must be from 0 to 100");
+		} else if (isGradeControl(key)) {
+			int percent = Integer.parseInt(value);
+			if (percent < 0 || percent > 100) throw new IllegalArgumentException("Color-grading controls must be from 0 to 100");
 		} else {
 			throw new IllegalArgumentException("Unsupported setting: " + key);
 		}
@@ -98,7 +101,12 @@ public final class Profile {
 	}
 
 	private static boolean isSupportedSetting(String key) {
-		return key.equals("profile") || key.equals("mcopt.lod") || key.equals("alloyum.fx.grade") || key.equals("alloyum.fx.grade.strength");
+		return key.equals("profile") || key.equals("mcopt.lod") || key.equals("alloyum.fx.grade") || key.equals("alloyum.fx.grade.strength")
+			|| isGradeControl(key);
+	}
+
+	private static boolean isGradeControl(String key) {
+		return key.equals("alloyum.fx.grade.saturation") || key.equals("alloyum.fx.grade.contrast") || key.equals("alloyum.fx.grade.warmth");
 	}
 
 	private static Properties readSettings() throws IOException {
@@ -256,7 +264,9 @@ public final class Profile {
 			# Far terrain (EXPERIMENTAL, off by default; for Macs with 10 or more GPU cores): remove the # below.
 			#mcopt.lod=true
 			alloyum.fx.grade=false
-			alloyum.fx.grade.strength=50
+			alloyum.fx.grade.saturation=20
+			alloyum.fx.grade.contrast=20
+			alloyum.fx.grade.warmth=10
 			""".formatted(name);
 		try {
 			Files.createDirectories(cfg.getParent());

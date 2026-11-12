@@ -11,17 +11,21 @@ layout(std140) uniform SamplerInfo {
 };
 
 layout(std140) uniform GradeConfig {
-    float Strength;
+    float Saturation;
+    float Contrast;
+    float Warmth;
 };
 
 layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec4 source = texture(InSampler, texCoord);
-    float strength = clamp(Strength, 0.0, 1.0);
     float luminance = dot(source.rgb, vec3(0.2126, 0.7152, 0.0722));
-    vec3 saturated = mix(vec3(luminance), source.rgb, 1.1);
-    vec3 contrasted = (saturated - vec3(0.5)) * 1.1 + vec3(0.5);
-    contrasted += vec3(0.04, 0.0, -0.04);
-    fragColor = vec4(mix(source.rgb, clamp(contrasted, 0.0, 1.0), strength), source.a);
+    float saturation = clamp(Saturation, 0.0, 1.0) * 0.05;
+    float contrast = clamp(Contrast, 0.0, 1.0) * 0.05;
+    float warmth = clamp(Warmth, 0.0, 1.0) * 0.02;
+    vec3 graded = mix(vec3(luminance), source.rgb, 1.0 + saturation);
+    graded = (graded - vec3(0.5)) * (1.0 + contrast) + vec3(0.5);
+    graded += vec3(warmth, 0.0, -warmth);
+    fragColor = vec4(clamp(graded, 0.0, 1.0), source.a);
 }

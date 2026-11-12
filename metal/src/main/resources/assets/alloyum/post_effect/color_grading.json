@@ -1,7 +1,4 @@
 {
-	"targets": {
-		"swap": {}
-	},
 	"passes": [
 		{
 			"vertex_shader": "minecraft:core/screenquad",
@@ -12,33 +9,23 @@
 					"target": "minecraft:main"
 				}
 			],
-			"output": "swap",
+			"output": "alloyum:grade_output",
 			"uniforms": {
 				"GradeConfig": [
 					{
-						"name": "Strength",
+						"name": "Saturation",
 						"type": "float",
-						"value": 0.5
-					}
-				]
-			}
-		},
-		{
-			"vertex_shader": "minecraft:core/screenquad",
-			"fragment_shader": "minecraft:post/blit",
-			"inputs": [
-				{
-					"sampler_name": "In",
-					"target": "swap"
-				}
-			],
-			"output": "minecraft:main",
-			"uniforms": {
-				"BlitConfig": [
+						"value": 0.2
+					},
 					{
-						"name": "ColorModulate",
-						"type": "vec4",
-						"value": [1.0, 1.0, 1.0, 1.0]
+						"name": "Contrast",
+						"type": "float",
+						"value": 0.2
+					},
+					{
+						"name": "Warmth",
+						"type": "float",
+						"value": 0.1
 					}
 				]
 			}
