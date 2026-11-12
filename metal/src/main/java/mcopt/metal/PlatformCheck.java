@@ -30,7 +30,7 @@ final class PlatformCheck {
 		String problem = problem(os, arch, version);
 		if (problem == null) return;
 		String name = modName();
-		String fix = "To play on this computer, remove the " + (name.equals("mcopt Metal") ? "mcopt-metal" : name) + " jar from the mods folder.";
+		String fix = "To play on this computer, remove the " + (name.equals("Alloyum Metal") ? "mcopt-metal" : name) + " jar from the mods folder.";
 		String message = name + " can't run here. " + problem + " " + fix;
 		Log.error(LogCategory.GENERAL, message);
 		try {
@@ -54,12 +54,12 @@ final class PlatformCheck {
 		tree.addButton(Localization.format("gui.button.copyError"), FabricStatusTree.FabricBasicButtonType.CLICK_MANY).withClipboard(message);
 	}
 
-	/** The mod's name from its fabric.mod.json (what Fabric's own dialogs call it): builds differ ("mcopt", "mcopt Metal"). */
+	/** The mod's name from its fabric.mod.json (what Fabric's own dialogs call it): builds differ ("Alloyum", "Alloyum Metal"). */
 	private static String modName() {
 		try {
-			return FabricLoader.getInstance().getModContainer("mcopt-metal").map(c -> c.getMetadata().getName()).orElse("mcopt Metal");
+			return FabricLoader.getInstance().getModContainer("mcopt-metal").map(c -> c.getMetadata().getName()).orElse("Alloyum Metal");
 		} catch (Throwable t) {
-			return "mcopt Metal";
+			return "Alloyum Metal";
 		}
 	}
 

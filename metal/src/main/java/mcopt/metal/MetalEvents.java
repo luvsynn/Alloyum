@@ -11,9 +11,9 @@ import jdk.jfr.Threshold;
 final class MetalEvents {
 	private static final boolean ENABLED = Boolean.getBoolean("mcopt.metal.jfr");
 
-	@Name("mcopt.MetalOperation")
+	@Name("Alloyum.MetalOperation")
 	@Label("Metal operation")
-	@Category("mcopt")
+	@Category("Alloyum")
 	@Threshold("1 ms")
 	@StackTrace(true)
 	static final class Operation extends Event {
@@ -35,9 +35,9 @@ final class MetalEvents {
 		return event;
 	}
 
-	@Name("mcopt.MetalArenaTransfer")
+	@Name("Alloyum.MetalArenaTransfer")
 	@Label("Metal arena transfer")
-	@Category("mcopt")
+	@Category("Alloyum")
 	@StackTrace(true)
 	static final class ArenaTransfer extends Event {
 		String operation;

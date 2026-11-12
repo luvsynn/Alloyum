@@ -2,7 +2,7 @@
 	"schemaVersion": 1,
 	"id": "mcopt-fps",
 	"version": "${version}",
-	"name": "mcopt fps",
+	"name": "Alloyum FPS",
 	"description": "Shows the frame rate in the top-left corner.",
 	"license": "Apache-2.0",
 	"authors": ["Noah Dunnagan"],
