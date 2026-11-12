@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Properties;
 import java.util.TreeMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Flag profiles: one place that turns on a set of -Dmcopt.* switches without editing the launcher's JVM arguments.
@@ -32,6 +34,68 @@ public final class Profile {
 	static final String DEFAULT = "indie";
 
 	private Profile() {
+	}
+
+	public static String configuredProfile() throws IOException {
+		Properties settings = readSettings();
+		String name = settings.getProperty("profile", DEFAULT).trim();
+		return name.isEmpty() ? DEFAULT : name;
+	}
+
+	public static boolean configuredFarTerrain(String profile) throws IOException {
+		Properties settings = readSettings();
+		String setting = settings.getProperty("mcopt.lod");
+		if (setting != null) return Boolean.parseBoolean(setting.trim());
+		if (profile.isEmpty() || profile.equals("none")) return false;
+		Properties profileSettings = new Properties();
+		try (InputStream in = Profile.class.getResourceAsStream("/mcopt/profiles/" + profile + ".properties")) {
+			if (in != null) profileSettings.load(in);
+		}
+		return Boolean.parseBoolean(profileSettings.getProperty("mcopt.lod", "false").trim());
+	}
+
+	public static void saveSetting(String key, String value) throws IOException {
+		if (key.equals("profile")) {
+			if (!java.util.List.of("indie", "alpha", "recommended", "none").contains(value)) throw new IllegalArgumentException("Unknown profile: " + value);
+		} else if (key.equals("mcopt.lod")) {
+			if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Invalid far-terrain setting: " + value);
+		} else {
+			throw new IllegalArgumentException("Unsupported setting: " + key);
+		}
+
+		Path cfg = gameDir().resolve("config").resolve("mcopt.properties");
+		String contents = Files.exists(cfg) ? Files.readString(cfg, StandardCharsets.UTF_8) : "";
+		Pattern pattern = Pattern.compile("(?m)^([\\t ]*)" + Pattern.quote(key) + "(?:[\\t ]*[=:][\\t ]*|[\\t ]+)[^\\r\\n]*");
+		Matcher matcher = pattern.matcher(contents);
+		int start = -1, end = -1;
+		String indent = "";
+		while (matcher.find()) {
+			start = matcher.start();
+			end = matcher.end();
+			indent = matcher.group(1);
+		}
+		String updated;
+		if (start >= 0) {
+			// Replace only the last active copy so every unrelated line stays unchanged.
+			updated = contents.substring(0, start) + indent + key + "=" + value + contents.substring(end);
+		} else {
+			String lineEnding = contents.contains("\r\n") ? "\r\n" : "\n";
+			String prefix = contents.isEmpty() || contents.endsWith("\n") || contents.endsWith("\r") ? "" : lineEnding;
+			updated = contents + prefix + key + "=" + value;
+		}
+		Files.createDirectories(cfg.getParent());
+		Files.writeString(cfg, updated, StandardCharsets.UTF_8);
+	}
+
+	private static Properties readSettings() throws IOException {
+		Properties settings = new Properties();
+		Path cfg = gameDir().resolve("config").resolve("mcopt.properties");
+		if (Files.isRegularFile(cfg)) {
+			try (Reader reader = Files.newBufferedReader(cfg, StandardCharsets.UTF_8)) {
+				settings.load(reader);
+			}
+		}
+		return settings;
 	}
 
 	public static synchronized void apply() {
